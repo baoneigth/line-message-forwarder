@@ -1,0 +1,21 @@
+[Unit]
+Description=LINE Message Forwarder - Process Monitor
+After=network-online.target line-forwarder.service
+Wants=network-online.target
+BindsTo=line-forwarder.service
+
+[Service]
+Type=simple
+User=line-forwarder
+Group=line-forwarder
+WorkingDirectory=/opt/line-message-forwarder
+EnvironmentFile=/opt/line-message-forwarder/.env
+ExecStart=/usr/bin/python3 /opt/line-message-forwarder/monitors/process_monitor.py
+Restart=on-failure
+RestartSec=10
+Nice=5
+StandardOutput=append:/opt/line-message-forwarder/data/process_monitor.log
+StandardError=append:/opt/line-message-forwarder/data/process_monitor.err.log
+
+[Install]
+WantedBy=multi-user.target
