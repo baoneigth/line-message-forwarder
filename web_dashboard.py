@@ -16,19 +16,18 @@ Available API endpoints:
     POST /api/process/stop             - manually stop the process
 
 Authentication:
-    Control endpoints (POST /api/process/restart, POST /api/process/stop)
-    require a token when the ``DASHBOARD_TOKEN`` environment variable is
-    set. Clients must send it as the ``X-Dashboard-Token`` header (or a
-    ``?token=`` query parameter). If ``DASHBOARD_TOKEN`` is not set, control
-    endpoints are disabled by default to avoid exposing unauthenticated
-    process control on the network.
+    All ``/api/process/*`` endpoints require a token set via the
+    ``DASHBOARD_TOKEN`` environment variable. Clients must send it as the
+    ``X-Dashboard-Token`` header. ``DASHBOARD_TOKEN`` must be set before
+    starting the server; :func:`run` refuses to start otherwise so that the
+    dashboard cannot be exposed without authentication by accident.
 """
 import hmac
 import json
 import os
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse
 
 from process_manager import ProcessManager
 
@@ -99,22 +98,17 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _is_authorized(self, parsed):
-        """Check the request against DASHBOARD_TOKEN, if one is configured."""
-        if not DASHBOARD_TOKEN:
-            return False
+    def _is_authorized(self):
+        """Check the request against DASHBOARD_TOKEN via the header."""
         supplied = self.headers.get('X-Dashboard-Token')
-        if not supplied:
-            query = parse_qs(parsed.query)
-            supplied = query.get('token', [None])[0]
-        if not supplied:
+        if not supplied or not DASHBOARD_TOKEN:
             return False
         return hmac.compare_digest(supplied, DASHBOARD_TOKEN)
 
     def _unauthorized(self):
         self._send_json(
             {'error': 'unauthorized: set DASHBOARD_TOKEN and send it as '
-                      'X-Dashboard-Token header or ?token= query param'},
+                      'the X-Dashboard-Token header'},
             status=401)
 
     def do_GET(self):
@@ -135,7 +129,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._send_json({'error': 'not found'}, status=404)
             return
 
-        if not self._is_authorized(parsed):
+        if not self._is_authorized():
             self._unauthorized()
             return
 
@@ -158,7 +152,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._send_json({'error': 'not found'}, status=404)
             return
 
-        if not self._is_authorized(parsed):
+        if not self._is_authorized():
             self._unauthorized()
             return
 
@@ -174,6 +168,11 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
 
 def run(port=8080):
+    if not DASHBOARD_TOKEN:
+        print('[✗] 錯誤: 未設定 DASHBOARD_TOKEN 環境變數，拒絕啟動儀表板')
+        print('[*] 請先執行: export DASHBOARD_TOKEN="請填入一組隨機字串"')
+        sys.exit(1)
+
     server = HTTPServer(('0.0.0.0', port), DashboardRequestHandler)
     print(f'[*] Web 儀表板已啟動: http://0.0.0.0:{port}')
     try:

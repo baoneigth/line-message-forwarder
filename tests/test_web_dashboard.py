@@ -2,8 +2,6 @@
 Tests for the web dashboard authorization helper.
 """
 import importlib
-from unittest.mock import MagicMock
-from urllib.parse import urlparse
 
 
 def make_handler(module, headers=None):
@@ -19,9 +17,8 @@ class TestDashboardAuthorization:
         importlib.reload(web_dashboard)
 
         handler = make_handler(web_dashboard)
-        parsed = urlparse('/api/process/restart')
 
-        assert handler._is_authorized(parsed) is False
+        assert handler._is_authorized() is False
 
     def test_correct_header_token_allows_access(self, monkeypatch):
         monkeypatch.setenv('DASHBOARD_TOKEN', 'secret123')
@@ -29,9 +26,8 @@ class TestDashboardAuthorization:
         importlib.reload(web_dashboard)
 
         handler = make_handler(web_dashboard, headers={'X-Dashboard-Token': 'secret123'})
-        parsed = urlparse('/api/process/restart')
 
-        assert handler._is_authorized(parsed) is True
+        assert handler._is_authorized() is True
 
     def test_wrong_header_token_denies_access(self, monkeypatch):
         monkeypatch.setenv('DASHBOARD_TOKEN', 'secret123')
@@ -39,16 +35,25 @@ class TestDashboardAuthorization:
         importlib.reload(web_dashboard)
 
         handler = make_handler(web_dashboard, headers={'X-Dashboard-Token': 'nope'})
-        parsed = urlparse('/api/process/restart')
 
-        assert handler._is_authorized(parsed) is False
+        assert handler._is_authorized() is False
 
-    def test_query_param_token_allows_access(self, monkeypatch):
+    def test_missing_header_denies_access(self, monkeypatch):
         monkeypatch.setenv('DASHBOARD_TOKEN', 'secret123')
         import web_dashboard
         importlib.reload(web_dashboard)
 
         handler = make_handler(web_dashboard)
-        parsed = urlparse('/api/process/restart?token=secret123')
 
-        assert handler._is_authorized(parsed) is True
+        assert handler._is_authorized() is False
+
+    def test_run_refuses_to_start_without_token(self, monkeypatch):
+        monkeypatch.delenv('DASHBOARD_TOKEN', raising=False)
+        import web_dashboard
+        importlib.reload(web_dashboard)
+
+        try:
+            web_dashboard.run(port=0)
+            assert False, 'expected SystemExit'
+        except SystemExit as exc:
+            assert exc.code == 1

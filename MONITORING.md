@@ -53,16 +53,16 @@
 
 ### 儀表板身份驗證
 
-所有 `/api/process/*` 端點（包含查詢狀態與控制端點）皆需要驗證，預設會拒絕所有請求。
-啟動儀表板前請先設定環境變數 `DASHBOARD_TOKEN`：
+所有 `/api/process/*` 端點（包含查詢狀態與控制端點）皆需要驗證。若未設定
+`DASHBOARD_TOKEN`，`web_dashboard.py` 會拒絕啟動，避免儀表板在未受保護的情況
+下暴露於網路上。啟動前請先設定環境變數：
 
 ```bash
 export DASHBOARD_TOKEN="請填入一組隨機字串"
 python web_dashboard.py 8080
 ```
 
-呼叫任一 API 端點時需附上 Token，可用標頭 `X-Dashboard-Token`，或查詢參數
-`?token=`：
+呼叫任一 API 端點時需在標頭附上 Token（`X-Dashboard-Token`）：
 
 ```bash
 curl -X POST -H "X-Dashboard-Token: $DASHBOARD_TOKEN" \
