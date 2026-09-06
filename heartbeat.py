@@ -7,10 +7,13 @@ then check the timestamp inside this file to decide whether the process is
 healthy or needs to be restarted.
 """
 import json
+import logging
 import os
 import threading
 import time
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 class HeartbeatManager:
@@ -62,7 +65,7 @@ class HeartbeatManager:
             try:
                 self.write_heartbeat()
             except Exception:
-                pass
+                logger.exception('Failed to write heartbeat to %s', self.heartbeat_file)
             self._stop_event.wait(self.interval)
 
     def start(self):
@@ -82,4 +85,4 @@ class HeartbeatManager:
         try:
             self.write_heartbeat(status='stopped')
         except Exception:
-            pass
+            logger.exception('Failed to write final heartbeat to %s', self.heartbeat_file)

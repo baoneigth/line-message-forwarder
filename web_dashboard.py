@@ -21,6 +21,12 @@ Authentication:
     ``X-Dashboard-Token`` header. ``DASHBOARD_TOKEN`` must be set before
     starting the server; :func:`run` refuses to start otherwise so that the
     dashboard cannot be exposed without authentication by accident.
+
+Network exposure:
+    By default the server only binds to ``127.0.0.1`` (localhost). Set the
+    ``DASHBOARD_HOST`` environment variable (e.g. ``0.0.0.0``) to expose it
+    on other interfaces — only do so behind a TLS-terminating reverse proxy,
+    since the token is otherwise sent in plain text.
 """
 import hmac
 import json
@@ -167,14 +173,18 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         pass
 
 
-def run(port=8080):
+def run(port=8080, host=None):
     if not DASHBOARD_TOKEN:
         print('[✗] 錯誤: 未設定 DASHBOARD_TOKEN 環境變數，拒絕啟動儀表板')
         print('[*] 請先執行: export DASHBOARD_TOKEN="請填入一組隨機字串"')
         sys.exit(1)
 
-    server = HTTPServer(('0.0.0.0', port), DashboardRequestHandler)
-    print(f'[*] Web 儀表板已啟動: http://0.0.0.0:{port}')
+    # Bind to localhost by default; set DASHBOARD_HOST=0.0.0.0 (typically
+    # behind a TLS-terminating reverse proxy) to expose it more broadly.
+    host = host or os.environ.get('DASHBOARD_HOST', '127.0.0.1')
+
+    server = HTTPServer((host, port), DashboardRequestHandler)
+    print(f'[*] Web 儀表板已啟動: http://{host}:{port}')
     try:
         server.serve_forever()
     except KeyboardInterrupt:

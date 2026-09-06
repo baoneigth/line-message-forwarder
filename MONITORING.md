@@ -71,6 +71,10 @@ curl -X POST -H "X-Dashboard-Token: $DASHBOARD_TOKEN" \
 
 網頁介面上方也提供輸入框，貼上 Token 後即可使用重啟/停止按鈕。
 
+儀表板預設僅綁定於 `127.0.0.1`（本機）。若需對外開放，請設定環境變數
+`DASHBOARD_HOST=0.0.0.0`，並務必透過具備 TLS 的反向代理（reverse proxy）
+存取，以避免 Token 以明文傳輸。
+
 ## 自訂設定
 
 `ProcessMonitor` 與 `ProcessManager` 的建構子皆接受自訂參數，例如：
