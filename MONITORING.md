@@ -53,7 +53,7 @@
 
 ### 儀表板身份驗證
 
-`/api/process/restart` 與 `/api/process/stop` 屬於控制端點，預設會拒絕所有請求。
+所有 `/api/process/*` 端點（包含查詢狀態與控制端點）皆需要驗證，預設會拒絕所有請求。
 啟動儀表板前請先設定環境變數 `DASHBOARD_TOKEN`：
 
 ```bash
@@ -61,7 +61,7 @@ export DASHBOARD_TOKEN="請填入一組隨機字串"
 python web_dashboard.py 8080
 ```
 
-呼叫控制端點時需附上 Token，可用標頭 `X-Dashboard-Token`，或查詢參數
+呼叫任一 API 端點時需附上 Token，可用標頭 `X-Dashboard-Token`，或查詢參數
 `?token=`：
 
 ```bash

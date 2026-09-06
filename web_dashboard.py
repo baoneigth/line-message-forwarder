@@ -23,6 +23,7 @@ Authentication:
     endpoints are disabled by default to avoid exposing unauthenticated
     process control on the network.
 """
+import hmac
 import json
 import os
 import sys
@@ -49,7 +50,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <script>
 function token() { return document.getElementById('token').value; }
 async function refresh() {
-  const res = await fetch('/api/process/status');
+  const res = await fetch('/api/process/status', { headers: { 'X-Dashboard-Token': token() } });
   const data = await res.json();
   document.getElementById('status').innerText = JSON.stringify(data, null, 2);
 }
@@ -78,6 +79,10 @@ def load_restart_history():
 class DashboardRequestHandler(BaseHTTPRequestHandler):
     manager = ProcessManager()
 
+    # Paths reachable without a DASHBOARD_TOKEN (the HTML shell itself does
+    # not expose any process information).
+    PUBLIC_PATHS = ('/',)
+
     def _send_json(self, payload, status=200):
         body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
         self.send_response(status)
@@ -102,14 +107,39 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if not supplied:
             query = parse_qs(parsed.query)
             supplied = query.get('token', [None])[0]
-        return supplied == DASHBOARD_TOKEN
+        if not supplied:
+            return False
+        return hmac.compare_digest(supplied, DASHBOARD_TOKEN)
+
+    def _unauthorized(self):
+        self._send_json(
+            {'error': 'unauthorized: set DASHBOARD_TOKEN and send it as '
+                      'X-Dashboard-Token header or ?token= query param'},
+            status=401)
 
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        if path == '/':
+
+        if path in self.PUBLIC_PATHS:
             self._send_html(DASHBOARD_HTML)
-        elif path == '/api/process/status':
+            return
+
+        api_paths = (
+            '/api/process/status',
+            '/api/process/uptime',
+            '/api/process/memory',
+            '/api/process/restart-history',
+        )
+        if path not in api_paths:
+            self._send_json({'error': 'not found'}, status=404)
+            return
+
+        if not self._is_authorized(parsed):
+            self._unauthorized()
+            return
+
+        if path == '/api/process/status':
             self._send_json(self.manager.get_status())
         elif path == '/api/process/uptime':
             status = self.manager.get_status()
@@ -117,10 +147,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         elif path == '/api/process/memory':
             status = self.manager.get_status()
             self._send_json({'memory_rss_bytes': status.get('memory_rss_bytes', 0)})
-        elif path == '/api/process/restart-history':
-            self._send_json({'history': load_restart_history()})
         else:
-            self._send_json({'error': 'not found'}, status=404)
+            self._send_json({'history': load_restart_history()})
 
     def do_POST(self):
         parsed = urlparse(self.path)
@@ -131,10 +159,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             return
 
         if not self._is_authorized(parsed):
-            self._send_json(
-                {'error': 'unauthorized: set DASHBOARD_TOKEN and send it as '
-                          'X-Dashboard-Token header or ?token= query param'},
-                status=401)
+            self._unauthorized()
             return
 
         if path == '/api/process/restart':

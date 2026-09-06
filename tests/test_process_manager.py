@@ -58,7 +58,9 @@ class TestProcessManagerLifecycle:
         with open(manager.pid_file, 'w', encoding='utf-8') as f:
             f.write('555')
 
-        mock_psutil.pid_exists.return_value = True
+        # First call is the initial is_running() check, subsequent calls
+        # verify the process actually exited after terminate()/wait().
+        mock_psutil.pid_exists.side_effect = [True, False]
         mock_proc = MagicMock()
         mock_psutil.Process.return_value = mock_proc
 

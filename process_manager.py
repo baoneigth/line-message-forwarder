@@ -108,17 +108,17 @@ class ProcessManager:
                 proc = psutil.Process(pid)
                 proc.terminate()
                 proc.wait(timeout=self.stop_timeout)
-                terminated = True
             except psutil.TimeoutExpired:
                 try:
                     proc.kill()
                     proc.wait(timeout=self.stop_timeout)
-                    terminated = True
                 except psutil.Error:
-                    terminated = not psutil.pid_exists(pid)
+                    pass
             except psutil.Error:
-                # Process already gone, or inaccessible.
-                terminated = not psutil.pid_exists(pid)
+                pass  # Process already gone, or inaccessible.
+            # Always re-verify via the PID rather than trusting which
+            # exception branch was taken (wait() can itself time out again).
+            terminated = not psutil.pid_exists(pid)
         else:
             try:
                 os.kill(pid, 15)
