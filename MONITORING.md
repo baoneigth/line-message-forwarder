@@ -75,6 +75,15 @@ curl -X POST -H "X-Dashboard-Token: $DASHBOARD_TOKEN" \
 `DASHBOARD_HOST=0.0.0.0`，並務必透過具備 TLS 的反向代理（reverse proxy）
 存取，以避免 Token 以明文傳輸。
 
+儀表板所讀取的檔案路徑（PID 檔、心跳檔、重啟歷史）皆可透過環境變數覆寫，
+方便與自訂的 `ProcessMonitor`/`ProcessManager` 設定保持一致：
+
+| 環境變數 | 預設值 | 說明 |
+|---------|--------|------|
+| `PID_FILE` | `data/forwarder.pid` | 主程式 PID 檔案路徑 |
+| `HEARTBEAT_FILE` | `data/heartbeat.json` | 心跳檔案路徑 |
+| `RESTART_HISTORY_FILE` | `data/restart_history.json` | 重啟歷史紀錄路徑 |
+
 ## 自訂設定
 
 `ProcessMonitor` 與 `ProcessManager` 的建構子皆接受自訂參數，例如：

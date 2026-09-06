@@ -37,7 +37,7 @@ from urllib.parse import urlparse
 
 from process_manager import ProcessManager
 
-RESTART_HISTORY_FILE = 'data/restart_history.json'
+RESTART_HISTORY_FILE = os.environ.get('RESTART_HISTORY_FILE', 'data/restart_history.json')
 DASHBOARD_TOKEN = os.environ.get('DASHBOARD_TOKEN')
 
 DASHBOARD_HTML = """<!DOCTYPE html>

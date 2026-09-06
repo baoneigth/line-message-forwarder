@@ -105,3 +105,25 @@ class TestDashboardAuthorization:
         web_dashboard.run(port=8080)
 
         assert captured['address'] == ('0.0.0.0', 8080)
+
+
+class TestRestartHistoryFileConfig:
+    def test_uses_default_restart_history_path(self, monkeypatch):
+        monkeypatch.delenv('RESTART_HISTORY_FILE', raising=False)
+        import web_dashboard
+        importlib.reload(web_dashboard)
+
+        assert web_dashboard.RESTART_HISTORY_FILE == 'data/restart_history.json'
+
+    def test_honors_restart_history_file_env_var(self, monkeypatch, tmp_path):
+        custom_path = str(tmp_path / 'custom_restart_history.json')
+        monkeypatch.setenv('RESTART_HISTORY_FILE', custom_path)
+        import web_dashboard
+        importlib.reload(web_dashboard)
+
+        assert web_dashboard.RESTART_HISTORY_FILE == custom_path
+
+        with open(custom_path, 'w', encoding='utf-8') as f:
+            f.write('[{"reason": "test"}]')
+
+        assert web_dashboard.load_restart_history() == [{'reason': 'test'}]
