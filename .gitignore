@@ -41,6 +41,14 @@ ENV/
 logs/
 *.log
 
+# Runtime data (heartbeat, pid, restart history)
+data/*.json
+data/*.pid
+!data/.gitkeep
+
+# Temp images used by the forwarder
+temp_images/
+
 # Cache
 .cache/
 *.cache

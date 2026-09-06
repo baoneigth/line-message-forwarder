@@ -1,0 +1,4 @@
+This directory holds runtime data (heartbeat file, logs, PID file, restart
+history) generated while the forwarder and process monitor are running.
+These files are intentionally excluded from version control (see
+.gitignore).
