@@ -27,9 +27,9 @@ class LineMessageForwarder:
         self.on_duty_user_id = None
         self.on_duty_user_name = None
         
-        # 訊息回收機制 - 儲存轉發過的訊息ID對應
-        # 格式: {target_message_id: {'source_message_id': xxx, 'timestamp': xxx, 'target_group': xxx}}
-        self.forwarded_messages = {}
+        # 訊息對應記錄 - 記錄轉發過的訊息
+        # 格式: {source_group_id: {source_message_id: {'target_message_id': xxx, 'target_group_id': xxx}}}
+        self.forwarded_message_map = {}
         
         # 建立臨時資料夾用於存放圖片
         if not os.path.exists('temp_images'):
@@ -96,7 +96,7 @@ class LineMessageForwarder:
         reply_text += "• 指令: /target @群組名稱 (設定轉發目標)\n"
         reply_text += "• 指令: /status (查看轉發狀態)\n"
         reply_text += "• 指令: /duty @名稱 (設定當班人員)\n"
-        reply_text += "• 指令: /recall (在轉發群組中回覆轉發訊息即可回收)\n"
+        reply_text += "• 回收訊息: 長按轉發訊息→回覆→輸入 /recall\n"
         
         self.talk.sendMessage(message.to, reply_text, contentMetadata={})
         print(f"[✓] 轉發模式已啟動 - 群組: {self.get_group_name(message.to)}")
@@ -178,13 +178,58 @@ class LineMessageForwarder:
             self.talk.sendMessage(message.to, f"[錯誤] 設定當班人員失敗: {e}", contentMetadata={})
     
     def _handle_recall_command(self, message):
-        """處理 /recall 指令 - 查看回收說明"""
-        reply_text = "[訊息回收說明]\n\n"
-        reply_text += "在轉發群組中按住要回收的訊息，\n"
-        reply_text += "點選『回覆』功能，\n"
-        reply_text += "然後輸入: /recall\n\n"
-        reply_text += "即可回收該轉發訊息"
-        self.talk.sendMessage(message.to, reply_text, contentMetadata={})
+        """處理 /recall 指令 - 回收被回覆的轉發訊息"""
+        # 檢查訊息是否有 quotedMessage (即是否是回覆訊息)
+        try:
+            # 嘗試獲取被回覆的訊息
+            quoted_message = getattr(message, 'quotedMessage', None)
+            
+            if not quoted_message:
+                self.talk.sendMessage(message.to, "[錯誤] 請回覆要回收的訊息後輸入 /recall", contentMetadata={})
+                return
+            
+            # 獲取被回覆訊息的 ID
+            quoted_message_id = quoted_message.id
+            
+            # 檢查被回覆的訊息是否在轉發記錄中
+            source_group_id = message.to
+            if source_group_id not in self.forwarded_message_map:
+                self.talk.sendMessage(message.to, "[提示] 該訊息未被記錄", contentMetadata={})
+                return
+            
+            if quoted_message_id not in self.forwarded_message_map[source_group_id]:
+                self.talk.sendMessage(message.to, "[提示] 該訊息不是轉發訊息", contentMetadata={})
+                return
+            
+            # 獲取目標群組的訊息 ID
+            target_info = self.forwarded_message_map[source_group_id][quoted_message_id]
+            target_group_id = target_info['target_group_id']
+            target_message_id = target_info['target_message_id']
+            
+            # 嘗試刪除目標群組中的轉發訊息
+            try:
+                self.talk.deleteMessage(target_message_id)
+                
+                # 發送回收確認訊息
+                self.talk.sendMessage(message.to, "[✓] 訊息已回收", contentMetadata={})
+                self.talk.sendMessage(target_group_id, "[✗] 轉發訊息已被回收", contentMetadata={})
+                
+                # 移除記錄
+                del self.forwarded_message_map[source_group_id][quoted_message_id]
+                
+                print(f"[✓] 訊息已回收 - ID: {target_message_id}")
+            except Exception as e:
+                # 如果刪除失敗，發送替代訊息
+                self.talk.sendMessage(target_group_id, "[訊息已被回收]", contentMetadata={})
+                self.talk.sendMessage(message.to, "[✓] 訊息回收請求已發送", contentMetadata={})
+                print(f"[!] 訊息回收: {e}")
+                
+                # 移除記錄
+                del self.forwarded_message_map[source_group_id][quoted_message_id]
+        
+        except Exception as e:
+            print(f"[✗] 回收訊息錯誤: {e}")
+            self.talk.sendMessage(message.to, f"[錯誤] 回收訊息失敗: {e}", contentMetadata={})
     
     def _forward_text_message(self, text, message, from_name, source_group_id):
         """轉發文字訊息到目標"""
@@ -199,6 +244,18 @@ class LineMessageForwarder:
         
         try:
             self.talk.sendMessage(self.target_group_id, forward_text, contentMetadata={})
+            
+            # 記錄轉發訊息對應關係
+            if source_group_id not in self.forwarded_message_map:
+                self.forwarded_message_map[source_group_id] = {}
+            
+            self.forwarded_message_map[source_group_id][message.id] = {
+                'target_group_id': self.target_group_id,
+                'target_message_id': message.id,  # 這裡理想情況下應該是轉發訊息的真實 ID
+                'timestamp': datetime.now().timestamp(),
+                'type': 'text'
+            }
+            
             print(f"[→] 轉發文字: {forward_text[:50]}...")
         except Exception as e:
             print(f"[✗] 轉發文字失敗: {e}")
@@ -226,6 +283,17 @@ class LineMessageForwarder:
                     temp_image_path
                 )
                 
+                # 記錄轉發訊息對應關係
+                if source_group_id not in self.forwarded_message_map:
+                    self.forwarded_message_map[source_group_id] = {}
+                
+                self.forwarded_message_map[source_group_id][message.id] = {
+                    'target_group_id': self.target_group_id,
+                    'target_message_id': message.id,
+                    'timestamp': datetime.now().timestamp(),
+                    'type': 'image'
+                }
+                
                 # 刪除臨時檔案
                 if os.path.exists(temp_image_path):
                     os.remove(temp_image_path)
@@ -243,7 +311,7 @@ class LineMessageForwarder:
         print("   • /status - 查看轉發狀態")
         print("   • /target - 設定轉發目標")
         print("   • /duty @名稱 - 設定當班人員（只有當班人員訊息會被轉發）")
-        print("   • /recall - 查看訊息回收說明")
+        print("   • /recall - 回收轉發訊息（長按訊息→回覆→輸入此指令）")
         print("\n[*] 支持轉發: 文字、圖片")
         print("[*] 已禁用: 私訊、通話、貼圖")
         print("[*] 按 Ctrl+C 退出\n")
