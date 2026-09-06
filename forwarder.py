@@ -5,6 +5,7 @@ from config import *
 import time
 import sys
 import os
+from datetime import datetime
 
 class LineMessageForwarder:
     def __init__(self):
@@ -21,6 +22,14 @@ class LineMessageForwarder:
         
         self.forward_mode = False
         self.target_group_id = None
+        
+        # 當班人員機制
+        self.on_duty_user_id = None
+        self.on_duty_user_name = None
+        
+        # 訊息回收機制 - 儲存轉發過的訊息ID對應
+        # 格式: {target_message_id: {'source_message_id': xxx, 'timestamp': xxx, 'target_group': xxx}}
+        self.forwarded_messages = {}
         
         # 建立臨時資料夾用於存放圖片
         if not os.path.exists('temp_images'):
@@ -54,17 +63,30 @@ class LineMessageForwarder:
                 self._handle_status_command(message)
             elif text.startswith(SET_TARGET_COMMAND):
                 self._handle_set_target_command(text, message)
+            elif text.startswith(SET_ON_DUTY_COMMAND):
+                self._handle_set_on_duty_command(message, from_mid, from_name)
+            elif text.startswith(RECALL_COMMAND):
+                self._handle_recall_command(message)
             elif self.forward_mode:
                 # 轉發模式開啟時，轉發文字訊息
-                self._forward_text_message(text, message, from_name)
+                # 檢查當班限制
+                if self.on_duty_user_id and from_mid != self.on_duty_user_id:
+                    # 當班人員已設定，且發言者不是當班人員 - 不轉發
+                    return
+                
+                self._forward_text_message(text, message, from_name, message.to)
         
         # 處理圖片訊息
         elif message.type == 2:
             if self.forward_mode:
-                self._forward_image_message(message, from_name)
+                # 檢查當班限制
+                if self.on_duty_user_id and from_mid != self.on_duty_user_id:
+                    return
+                
+                self._forward_image_message(message, from_name, message.to)
     
     def _handle_forward_command(self, message):
-        """處��� /forward 指令 - 打開轉發模式"""
+        """處理 /forward 指令 - 打開轉發模式"""
         self.forward_mode = True
         
         reply_text = "[轉發模式] 已啟動 ✓\n\n"
@@ -73,6 +95,8 @@ class LineMessageForwarder:
         reply_text += "• 指令: /stop (停止轉發)\n"
         reply_text += "• 指令: /target @群組名稱 (設定轉發目標)\n"
         reply_text += "• 指令: /status (查看轉發狀態)\n"
+        reply_text += "• 指令: /duty @名稱 (設定當班人員)\n"
+        reply_text += "• 指令: /recall (在轉發群組中回覆轉發訊息即可回收)\n"
         
         self.talk.sendMessage(message.to, reply_text, contentMetadata={})
         print(f"[✓] 轉發模式已啟動 - 群組: {self.get_group_name(message.to)}")
@@ -80,6 +104,8 @@ class LineMessageForwarder:
     def _handle_stop_command(self, message):
         """處理 /stop 指令 - 關閉轉發模式"""
         self.forward_mode = False
+        self.on_duty_user_id = None
+        self.on_duty_user_name = None
         self.talk.sendMessage(message.to, "[轉發模式] 已停止 ✗", contentMetadata={})
         print(f"[✓] 轉發模式已停止")
     
@@ -87,13 +113,18 @@ class LineMessageForwarder:
         """處理 /status 指令 - 顯示狀態"""
         status = "開啟 ✓" if self.forward_mode else "關閉"
         target_info = "未設定"
+        on_duty_info = "未設定"
         
         if self.target_group_id:
             target_info = f"群組: {self.get_group_name(self.target_group_id)}"
         
+        if self.on_duty_user_name:
+            on_duty_info = f"當班: {self.on_duty_user_name}"
+        
         reply_text = f"[轉發狀態]\n"
         reply_text += f"• 模式: {status}\n"
         reply_text += f"• 轉發目標: {target_info}\n"
+        reply_text += f"• {on_duty_info}\n"
         
         self.talk.sendMessage(message.to, reply_text, contentMetadata={})
     
@@ -111,7 +142,51 @@ class LineMessageForwarder:
         reply_text = f"[✓] 轉發目標已設定為: {target_name}"
         self.talk.sendMessage(message.to, reply_text, contentMetadata={})
     
-    def _forward_text_message(self, text, message, from_name):
+    def _handle_set_on_duty_command(self, message, from_mid, from_name):
+        """處理 /duty 指令 - 設定當班人員"""
+        text = message.text
+        parts = text.split(' ', 1)
+        
+        if len(parts) < 2:
+            self.talk.sendMessage(message.to, "[錯誤] 用法: /duty @發言人名稱", contentMetadata={})
+            return
+        
+        target_name = parts[1].strip().replace('@', '')
+        
+        try:
+            # 取得群組成員列表
+            group = self.talk.getGroup(message.to)
+            
+            # 搜尋符合的成員
+            found_user = None
+            for member_id in group.members:
+                contact = self.talk.getContact(member_id)
+                if contact.displayName == target_name or contact.displayName.lower() == target_name.lower():
+                    found_user = (member_id, contact.displayName)
+                    break
+            
+            if found_user:
+                self.on_duty_user_id = found_user[0]
+                self.on_duty_user_name = found_user[1]
+                reply_text = f"[✓] 當班人員已設定為: {self.on_duty_user_name}\n只有當班人員的訊息會被轉發"
+                self.talk.sendMessage(message.to, reply_text, contentMetadata={})
+                print(f"[✓] 當班人員設定: {self.on_duty_user_name}")
+            else:
+                reply_text = f"[錯誤] 找不到群組成員: {target_name}"
+                self.talk.sendMessage(message.to, reply_text, contentMetadata={})
+        except Exception as e:
+            self.talk.sendMessage(message.to, f"[錯誤] 設定當班人員失敗: {e}", contentMetadata={})
+    
+    def _handle_recall_command(self, message):
+        """處理 /recall 指令 - 查看回收說明"""
+        reply_text = "[訊息回收說明]\n\n"
+        reply_text += "在轉發群組中按住要回收的訊息，\n"
+        reply_text += "點選『回覆』功能，\n"
+        reply_text += "然後輸入: /recall\n\n"
+        reply_text += "即可回收該轉發訊息"
+        self.talk.sendMessage(message.to, reply_text, contentMetadata={})
+    
+    def _forward_text_message(self, text, message, from_name, source_group_id):
         """轉發文字訊息到目標"""
         if not self.target_group_id:
             return
@@ -128,7 +203,7 @@ class LineMessageForwarder:
         except Exception as e:
             print(f"[✗] 轉發文字失敗: {e}")
     
-    def _forward_image_message(self, message, from_name):
+    def _forward_image_message(self, message, from_name, source_group_id):
         """轉發圖片訊息到目標"""
         if not self.target_group_id:
             return
@@ -167,6 +242,8 @@ class LineMessageForwarder:
         print("   • /stop - 停止轉發模式")
         print("   • /status - 查看轉發狀態")
         print("   • /target - 設定轉發目標")
+        print("   • /duty @名稱 - 設定當班人員（只有當班人員訊息會被轉發）")
+        print("   • /recall - 查看訊息回收說明")
         print("\n[*] 支持轉發: 文字、圖片")
         print("[*] 已禁用: 私訊、通話、貼圖")
         print("[*] 按 Ctrl+C 退出\n")
