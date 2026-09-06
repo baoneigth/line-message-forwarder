@@ -82,11 +82,24 @@ def load_restart_history():
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    manager = ProcessManager()
+    _manager = None
 
     # Paths reachable without a DASHBOARD_TOKEN (the HTML shell itself does
     # not expose any process information).
     PUBLIC_PATHS = ('/',)
+
+    @property
+    def manager(self):
+        """Lazily create the shared ProcessManager (avoids creating
+        ``data/`` as an import-time side effect, and picks up
+        ``PID_FILE``/``HEARTBEAT_FILE`` overrides at first use)."""
+        cls = type(self)
+        if cls._manager is None:
+            cls._manager = ProcessManager(
+                pid_file=os.environ.get('PID_FILE', 'data/forwarder.pid'),
+                heartbeat_file=os.environ.get('HEARTBEAT_FILE', 'data/heartbeat.json'),
+            )
+        return cls._manager
 
     def _send_json(self, payload, status=200):
         body = json.dumps(payload, ensure_ascii=False).encode('utf-8')

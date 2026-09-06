@@ -104,6 +104,7 @@ class ProcessManager:
 
         terminated = False
         if psutil is not None:
+            proc = None
             try:
                 proc = psutil.Process(pid)
                 proc.terminate()

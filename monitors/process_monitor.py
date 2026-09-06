@@ -163,12 +163,23 @@ class ProcessMonitor:
     # -- restart handling -------------------------------------------------
     def log_restart_event(self, reason):
         """Record a restart event, both in the log file and history file."""
+        now = datetime.now().timestamp()
         event = {
-            'timestamp': datetime.now().timestamp(),
+            'timestamp': now,
             'time': datetime.now().isoformat(),
             'reason': reason,
         }
         self.restart_history.append(event)
+
+        # Prune old entries so restart_history doesn't grow unboundedly over
+        # the lifetime of a long-running monitor. Keep a safety margin (2x)
+        # beyond the largest window we actually check against.
+        retention = max(self.restart_window, self.cooldown_period) * 2
+        self.restart_history = [
+            e for e in self.restart_history
+            if now - e['timestamp'] <= retention
+        ]
+
         self._save_restart_history()
         self.logger.info('Restart triggered: %s', reason)
         return event

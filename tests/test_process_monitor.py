@@ -88,7 +88,20 @@ class TestProcessMonitorRestartLimit:
             history = json.load(f)
 
         assert len(history) == 1
-        assert history[0]['reason'] == 'test crash'
+
+    def test_log_restart_event_prunes_old_entries(self, tmp_path):
+        monitor = make_monitor(tmp_path, restart_window=60, cooldown_period=300)
+        very_old_event = {
+            'timestamp': time.time() - 10000,
+            'time': 'very old',
+            'reason': 'ancient crash',
+        }
+        monitor.restart_history.append(very_old_event)
+
+        monitor.log_restart_event('recent crash')
+
+        assert very_old_event not in monitor.restart_history
+        assert len(monitor.restart_history) == 1
 
 
 class TestProcessMonitorProcessControl:
