@@ -57,3 +57,51 @@ class TestDashboardAuthorization:
             assert False, 'expected SystemExit'
         except SystemExit as exc:
             assert exc.code == 1
+
+    def test_run_binds_localhost_by_default(self, monkeypatch):
+        monkeypatch.setenv('DASHBOARD_TOKEN', 'secret123')
+        monkeypatch.delenv('DASHBOARD_HOST', raising=False)
+        import web_dashboard
+        importlib.reload(web_dashboard)
+
+        captured = {}
+
+        class FakeServer:
+            def __init__(self, address, handler):
+                captured['address'] = address
+
+            def serve_forever(self):
+                raise KeyboardInterrupt()
+
+            def shutdown(self):
+                pass
+
+        monkeypatch.setattr(web_dashboard, 'HTTPServer', FakeServer)
+
+        web_dashboard.run(port=8080)
+
+        assert captured['address'] == ('127.0.0.1', 8080)
+
+    def test_run_honors_dashboard_host_env_var(self, monkeypatch):
+        monkeypatch.setenv('DASHBOARD_TOKEN', 'secret123')
+        monkeypatch.setenv('DASHBOARD_HOST', '0.0.0.0')
+        import web_dashboard
+        importlib.reload(web_dashboard)
+
+        captured = {}
+
+        class FakeServer:
+            def __init__(self, address, handler):
+                captured['address'] = address
+
+            def serve_forever(self):
+                raise KeyboardInterrupt()
+
+            def shutdown(self):
+                pass
+
+        monkeypatch.setattr(web_dashboard, 'HTTPServer', FakeServer)
+
+        web_dashboard.run(port=8080)
+
+        assert captured['address'] == ('0.0.0.0', 8080)
