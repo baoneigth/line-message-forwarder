@@ -102,21 +102,34 @@ class ProcessManager:
             self._clear_pid()
             return False
 
+        terminated = False
         if psutil is not None:
             try:
                 proc = psutil.Process(pid)
                 proc.terminate()
                 proc.wait(timeout=self.stop_timeout)
+                terminated = True
             except psutil.TimeoutExpired:
-                proc.kill()
+                try:
+                    proc.kill()
+                    proc.wait(timeout=self.stop_timeout)
+                    terminated = True
+                except psutil.Error:
+                    terminated = not psutil.pid_exists(pid)
             except psutil.Error:
-                pass
+                # Process already gone, or inaccessible.
+                terminated = not psutil.pid_exists(pid)
         else:
             try:
                 os.kill(pid, 15)
                 time.sleep(self.stop_timeout)
             except OSError:
                 pass
+            terminated = not self.is_running()
+
+        if not terminated:
+            print('[!] 服務未能確認停止，保留 PID 檔案')
+            return False
 
         self._clear_pid()
         print('[✓] 服務已停止')

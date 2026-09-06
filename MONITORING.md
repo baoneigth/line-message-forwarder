@@ -51,6 +51,26 @@
 | POST | `/api/process/restart` | 手動重啟 |
 | POST | `/api/process/stop` | 手動停止 |
 
+### 儀表板身份驗證
+
+`/api/process/restart` 與 `/api/process/stop` 屬於控制端點，預設會拒絕所有請求。
+啟動儀表板前請先設定環境變數 `DASHBOARD_TOKEN`：
+
+```bash
+export DASHBOARD_TOKEN="請填入一組隨機字串"
+python web_dashboard.py 8080
+```
+
+呼叫控制端點時需附上 Token，可用標頭 `X-Dashboard-Token`，或查詢參數
+`?token=`：
+
+```bash
+curl -X POST -H "X-Dashboard-Token: $DASHBOARD_TOKEN" \
+  http://localhost:8080/api/process/restart
+```
+
+網頁介面上方也提供輸入框，貼上 Token 後即可使用重啟/停止按鈕。
+
 ## 自訂設定
 
 `ProcessMonitor` 與 `ProcessManager` 的建構子皆接受自訂參數，例如：
